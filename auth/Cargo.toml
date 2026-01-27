@@ -1,0 +1,32 @@
+[package]
+name = "enoch-auth"
+version = "0.1.0"
+edition = "2021"
+description = "Plan 9 authentication (p9sk1/dp9ik) for browser WASM"
+
+[lib]
+crate-type = ["cdylib", "rlib"]
+
+[dependencies]
+# WASM bindings
+wasm-bindgen = "0.2"
+
+# Crypto primitives
+sha1 = "0.10"
+sha2 = "0.10"
+hmac = "0.12"
+pbkdf2 = { version = "0.12", default-features = false }
+hkdf = "0.12"
+chacha20poly1305 = "0.10"
+getrandom = { version = "0.2", features = ["js"] }
+
+# For dp9ik Ed448 (we may need to implement ourselves)
+# num-bigint = "0.4"
+
+[dev-dependencies]
+wasm-bindgen-test = "0.3"
+hex = "0.4"
+
+[profile.release]
+opt-level = "s"
+lto = true

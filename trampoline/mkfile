@@ -1,0 +1,8 @@
+</$objtype/mkfile
+
+TARG=enoch
+OFILES=enoch.$O
+
+BIN=/$objtype/bin
+
+</sys/src/cmd/mkone

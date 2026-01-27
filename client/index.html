@@ -1,0 +1,44 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <title>Enoch</title>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    html, body { height: 100%; }
+    body {
+      background: #000;
+      overflow: hidden;
+      font-family: monospace;
+    }
+    #terminal {
+      width: 100%;
+      height: 100%;
+      color: #fff;
+      font-size: 14px;
+      line-height: 1.2;
+      padding: 8px;
+      overflow-y: auto;
+      white-space: pre-wrap;
+      word-wrap: break-word;
+    }
+    #status {
+      position: fixed;
+      top: 8px;
+      right: 8px;
+      padding: 4px 8px;
+      background: rgba(0,0,0,0.7);
+      color: #888;
+      font-size: 12px;
+      border-radius: 4px;
+    }
+    #status.connected { color: #0f0; }
+    #status.error { color: #f00; }
+  </style>
+</head>
+<body>
+  <div id="status">Connecting...</div>
+  <pre id="terminal"></pre>
+  <script type="module" src="dist/main.js"></script>
+</body>
+</html>

@@ -1,0 +1,476 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <title>Enoch Draw Test</title>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body {
+      background: #333;
+      padding: 20px;
+      font-family: system-ui, sans-serif;
+    }
+    h1 { color: #fff; margin-bottom: 20px; }
+    #canvas {
+      background: #eaffea;  /* Plan 9 pale yellow */
+      border: 1px solid #000;
+    }
+    #log {
+      margin-top: 20px;
+      padding: 10px;
+      background: #000;
+      color: #0f0;
+      font-family: monospace;
+      font-size: 12px;
+      height: 200px;
+      overflow-y: auto;
+      white-space: pre-wrap;
+    }
+    .controls {
+      margin-top: 20px;
+    }
+    button {
+      padding: 8px 16px;
+      margin-right: 10px;
+      cursor: pointer;
+    }
+  </style>
+</head>
+<body>
+  <h1>Enoch Draw Test</h1>
+  <canvas id="canvas" width="800" height="600"></canvas>
+  <div class="controls">
+    <button onclick="testBasic()">Basic Shapes</button>
+    <button onclick="testFont()">Font (Cache)</button>
+    <button onclick="testFontFallback()">Font (Fallback)</button>
+    <button onclick="testBlit()">Blit/Copy</button>
+    <button onclick="testAlloc()">Image Alloc</button>
+    <button onclick="clearCanvas()">Clear</button>
+  </div>
+  <div id="log"></div>
+
+  <script type="module">
+    import { LocalDrawDevice } from './dist/devices/draw.js';
+    import { DrawProtocol, DrawBuffer } from './dist/draw/protocol.js';
+    import { DrawOp, Channel } from './dist/draw/types.js';
+
+    const canvas = document.getElementById('canvas');
+    const logEl = document.getElementById('log');
+
+    const draw = new LocalDrawDevice(canvas);
+
+    draw.onFlush = (r) => {
+      log(`Flush: (${r.minX}, ${r.minY}) - (${r.maxX}, ${r.maxY})`);
+    };
+
+    function log(msg) {
+      logEl.textContent += msg + '\n';
+      logEl.scrollTop = logEl.scrollHeight;
+    }
+
+    function concat(...arrays) {
+      const total = arrays.reduce((sum, arr) => sum + arr.length, 0);
+      const result = new Uint8Array(total);
+      let offset = 0;
+      for (const arr of arrays) {
+        result.set(arr, offset);
+        offset += arr.length;
+      }
+      return result;
+    }
+
+    // Test: Basic shapes
+    window.testBasic = function() {
+      log('--- Basic Shapes Test ---');
+
+      // Allocate a red fill image (id=1)
+      const allocRed = DrawProtocol.alloc(
+        1,  // id
+        0,  // screenId
+        0,  // refresh
+        Channel.XRGB32,
+        true,  // repl (for solid colors)
+        { minX: 0, minY: 0, maxX: 1, maxY: 1 },
+        { minX: -0x3FFFFFFF, minY: -0x3FFFFFFF, maxX: 0x3FFFFFFF, maxY: 0x3FFFFFFF },
+        0xFFFF0000  // Red
+      );
+
+      // Allocate a blue fill image (id=2)
+      const allocBlue = DrawProtocol.alloc(
+        2, 0, 0, Channel.XRGB32, true,
+        { minX: 0, minY: 0, maxX: 1, maxY: 1 },
+        { minX: -0x3FFFFFFF, minY: -0x3FFFFFFF, maxX: 0x3FFFFFFF, maxY: 0x3FFFFFFF },
+        0xFF0000FF  // Blue
+      );
+
+      // Allocate a green fill image (id=3)
+      const allocGreen = DrawProtocol.alloc(
+        3, 0, 0, Channel.XRGB32, true,
+        { minX: 0, minY: 0, maxX: 1, maxY: 1 },
+        { minX: -0x3FFFFFFF, minY: -0x3FFFFFFF, maxX: 0x3FFFFFFF, maxY: 0x3FFFFFFF },
+        0xFF00FF00  // Green
+      );
+
+      // Draw filled rectangle (blit red image to screen)
+      const drawRect = DrawProtocol.draw(
+        0,  // dst = screen
+        1,  // src = red image
+        0,  // no mask
+        { minX: 50, minY: 50, maxX: 200, maxY: 150 },
+        { x: 0, y: 0 },
+        { x: 0, y: 0 }
+      );
+
+      // Draw line
+      const drawLine = DrawProtocol.line(
+        0,  // dst = screen
+        { x: 100, y: 200 },
+        { x: 300, y: 250 },
+        1,  // end0 = disc
+        1,  // end1 = disc
+        2,  // radius
+        2,  // src = blue
+        { x: 0, y: 0 }
+      );
+
+      // Draw filled ellipse
+      const drawEllipse = DrawProtocol.ellipseFill(
+        0,  // dst = screen
+        3,  // src = green
+        { x: 500, y: 200 },
+        80,  // a (x radius)
+        50,  // b (y radius)
+        { x: 0, y: 0 }
+      );
+
+      // Draw ellipse outline
+      const drawEllipseOutline = DrawProtocol.ellipse(
+        0, 1, // red outline
+        { x: 300, y: 400 },
+        60, 40,
+        3,  // thick
+        { x: 0, y: 0 }
+      );
+
+      // Flush
+      const flush = DrawProtocol.flush();
+
+      const cmd = concat(allocRed, allocBlue, allocGreen, drawRect, drawLine, drawEllipse, drawEllipseOutline, flush);
+      draw.processCommands(cmd);
+      log('Drew rectangle, line, ellipses');
+    };
+
+    // Test: Font rendering
+    window.testFont = function() {
+      log('--- Font Test ---');
+
+      // Allocate font cache image (id=100, will hold glyph bitmaps)
+      // Use GREY8 format for alpha mask
+      const allocFontImg = DrawProtocol.alloc(
+        100, 0, 0, Channel.GREY8, false,
+        { minX: 0, minY: 0, maxX: 256, maxY: 32 },
+        { minX: 0, minY: 0, maxX: 256, maxY: 32 },
+        0x00000000  // Transparent
+      );
+
+      // Allocate a temp image to draw glyphs into before copying to font cache
+      const allocTempImg = DrawProtocol.alloc(
+        101, 0, 0, Channel.GREY8, false,
+        { minX: 0, minY: 0, maxX: 16, maxY: 20 },
+        { minX: 0, minY: 0, maxX: 16, maxY: 20 },
+        0x00000000
+      );
+
+      // Initialize font (id=100, 128 chars, ascent=12)
+      const initFont = DrawProtocol.initFont(100, 128, 12);
+
+      // Now we need to load character glyphs
+      // In a real implementation, this would come from a subfont file
+      // For demo, we'll create simple block glyphs
+
+      // Allocate white fill for drawing glyphs
+      const allocWhite = DrawProtocol.alloc(
+        102, 0, 0, Channel.GREY8, true,
+        { minX: 0, minY: 0, maxX: 1, maxY: 1 },
+        { minX: -0x3FFFFFFF, minY: -0x3FFFFFFF, maxX: 0x3FFFFFFF, maxY: 0x3FFFFFFF },
+        0xFFFFFFFF  // White (opaque)
+      );
+
+      // Allocate black for text color
+      const allocBlack = DrawProtocol.alloc(
+        103, 0, 0, Channel.XRGB32, true,
+        { minX: 0, minY: 0, maxX: 1, maxY: 1 },
+        { minX: -0x3FFFFFFF, minY: -0x3FFFFFFF, maxX: 0x3FFFFFFF, maxY: 0x3FFFFFFF },
+        0xFF000000
+      );
+
+      let cmd = concat(allocFontImg, allocTempImg, initFont, allocWhite, allocBlack);
+      draw.processCommands(cmd);
+      log('Initialized font cache');
+
+      // Load some simple block character glyphs
+      // For simplicity, make each char an 8x12 block
+      const charWidth = 8;
+      const charHeight = 14;
+      const ascent = 12;
+
+      // Characters to load: ASCII 32-90 (space through Z)
+      const loadChars = [];
+      for (let c = 32; c <= 90; c++) {
+        const x = (c - 32) * charWidth;
+
+        // Draw glyph into temp image (simple filled rectangle)
+        // For space, don't draw anything
+        if (c !== 32) {
+          loadChars.push(DrawProtocol.draw(
+            101, 102, 0,
+            { minX: 0, minY: 2, maxX: charWidth - 1, maxY: charHeight - 2 },
+            { x: 0, y: 0 }, { x: 0, y: 0 }
+          ));
+        }
+
+        // Load char: copy from temp to font cache
+        // l fontid[4] srcid[4] index[2] R[4*4] P[2*4] left[1] width[1]
+        loadChars.push(DrawProtocol.loadChar(
+          100,      // fontId
+          101,      // srcId (temp image)
+          c,        // index (char code)
+          { minX: x, minY: 0, maxX: x + charWidth, maxY: charHeight },  // R in font cache
+          { x: 0, y: 0 },  // P in src
+          0,        // left bearing
+          charWidth // advance width
+        ));
+
+        // Clear temp for next char
+        if (c !== 32) {
+          loadChars.push(DrawProtocol.draw(
+            101, allocTempImg, 0,  // clear with transparent
+            { minX: 0, minY: 0, maxX: 16, maxY: 20 },
+            { x: 0, y: 0 }, { x: 0, y: 0 }
+          ));
+        }
+      }
+
+      cmd = concat(...loadChars);
+      draw.processCommands(cmd);
+      log('Loaded character glyphs');
+
+      // Now draw some text using the font
+      // s dstid[4] srcid[4] fontid[4] p[2*4] clipr[4*4] sp[2*4] n[2] indices[n*2]
+      const text = "HELLO PLAN 9";
+      const indices = [];
+      for (const ch of text) {
+        indices.push(ch.charCodeAt(0));
+      }
+
+      const drawString = DrawProtocol.string(
+        0,     // dst = screen
+        103,   // src = black color
+        100,   // font
+        { x: 50, y: 350 },  // position
+        { minX: 0, minY: 0, maxX: 800, maxY: 600 },  // clipr
+        { x: 0, y: 0 },  // sp
+        indices
+      );
+
+      const flush = DrawProtocol.flush();
+      cmd = concat(drawString, flush);
+      const response = draw.processCommands(cmd);
+
+      // Response contains end point (8 bytes)
+      if (response.length >= 8) {
+        const view = new DataView(response.buffer, response.byteOffset, response.byteLength);
+        const endX = view.getInt32(0, true);
+        const endY = view.getInt32(4, true);
+        log(`Drew text, end point: (${endX}, ${endY})`);
+      }
+    };
+
+    // Test: Font fallback (browser fonts)
+    window.testFontFallback = function() {
+      log('--- Font Fallback Test ---');
+
+      // Allocate a font image but DON'T load any glyphs
+      // This will trigger the browser font fallback
+      const allocFontImg = DrawProtocol.alloc(
+        200, 0, 0, Channel.GREY8, false,
+        { minX: 0, minY: 0, maxX: 256, maxY: 16 },
+        { minX: 0, minY: 0, maxX: 256, maxY: 16 },
+        0x00000000
+      );
+
+      // Initialize font (id=200, 256 chars, ascent=11, height ~14)
+      const initFont = DrawProtocol.initFont(200, 256, 11);
+
+      // Allocate colors
+      const allocBlack = DrawProtocol.alloc(
+        201, 0, 0, Channel.XRGB32, true,
+        { minX: 0, minY: 0, maxX: 1, maxY: 1 },
+        { minX: -0x3FFFFFFF, minY: -0x3FFFFFFF, maxX: 0x3FFFFFFF, maxY: 0x3FFFFFFF },
+        0xFF000000
+      );
+
+      const allocBlue = DrawProtocol.alloc(
+        202, 0, 0, Channel.XRGB32, true,
+        { minX: 0, minY: 0, maxX: 1, maxY: 1 },
+        { minX: -0x3FFFFFFF, minY: -0x3FFFFFFF, maxX: 0x3FFFFFFF, maxY: 0x3FFFFFFF },
+        0xFF0000FF
+      );
+
+      const allocYellow = DrawProtocol.alloc(
+        203, 0, 0, Channel.XRGB32, true,
+        { minX: 0, minY: 0, maxX: 1, maxY: 1 },
+        { minX: -0x3FFFFFFF, minY: -0x3FFFFFFF, maxX: 0x3FFFFFFF, maxY: 0x3FFFFFFF },
+        0xFFFFFF00
+      );
+
+      let cmd = concat(allocFontImg, initFont, allocBlack, allocBlue, allocYellow);
+      draw.processCommands(cmd);
+      log('Initialized empty font (will use browser fallback)');
+
+      // Draw text using the empty font - should fall back to browser font
+      const text1 = "Hello from browser fonts!";
+      const indices1 = Array.from(text1).map(c => c.charCodeAt(0));
+
+      const drawString1 = DrawProtocol.string(
+        0, 201, 200,  // dst=screen, src=black, font=200
+        { x: 50, y: 420 },
+        { minX: 0, minY: 0, maxX: 800, maxY: 600 },
+        { x: 0, y: 0 },
+        indices1
+      );
+
+      // Draw more text in blue
+      const text2 = "Plan 9 style rendering";
+      const indices2 = Array.from(text2).map(c => c.charCodeAt(0));
+
+      const drawString2 = DrawProtocol.string(
+        0, 202, 200,
+        { x: 50, y: 450 },
+        { minX: 0, minY: 0, maxX: 800, maxY: 600 },
+        { x: 0, y: 0 },
+        indices2
+      );
+
+      // Draw with background (stringBg)
+      const text3 = "Selected text";
+      const indices3 = Array.from(text3).map(c => c.charCodeAt(0));
+
+      const drawStringBg = DrawProtocol.stringBg(
+        0, 201, 200,
+        { x: 50, y: 480 },
+        { minX: 0, minY: 0, maxX: 800, maxY: 600 },
+        { x: 0, y: 0 },
+        203, { x: 0, y: 0 },  // yellow background
+        indices3
+      );
+
+      const flush = DrawProtocol.flush();
+      cmd = concat(drawString1, drawString2, drawStringBg, flush);
+      const response = draw.processCommands(cmd);
+
+      log('Drew text using browser font fallback');
+      log('  - Black text: "Hello from browser fonts!"');
+      log('  - Blue text: "Plan 9 style rendering"');
+      log('  - Yellow background: "Selected text"');
+    };
+
+    // Test: Blit/Copy
+    window.testBlit = function() {
+      log('--- Blit/Copy Test ---');
+
+      // Allocate an off-screen image with a pattern
+      const allocPattern = DrawProtocol.alloc(
+        20, 0, 0, Channel.XRGB32, false,
+        { minX: 0, minY: 0, maxX: 100, maxY: 100 },
+        { minX: 0, minY: 0, maxX: 100, maxY: 100 },
+        0xFFFF8800  // Orange
+      );
+
+      // Draw some shapes into the pattern image
+      const allocPurple = DrawProtocol.alloc(
+        21, 0, 0, Channel.XRGB32, true,
+        { minX: 0, minY: 0, maxX: 1, maxY: 1 },
+        { minX: -0x3FFFFFFF, minY: -0x3FFFFFFF, maxX: 0x3FFFFFFF, maxY: 0x3FFFFFFF },
+        0xFF8800FF
+      );
+
+      // Draw purple rectangle into pattern
+      const drawToPattern = DrawProtocol.draw(
+        20, 21, 0,
+        { minX: 20, minY: 20, maxX: 80, maxY: 80 },
+        { x: 0, y: 0 }, { x: 0, y: 0 }
+      );
+
+      // Copy pattern to screen (blit)
+      const blitToScreen = DrawProtocol.draw(
+        0, 20, 0,
+        { minX: 600, minY: 50, maxX: 700, maxY: 150 },
+        { x: 0, y: 0 }, { x: 0, y: 0 }
+      );
+
+      // Copy again at different location
+      const blitToScreen2 = DrawProtocol.draw(
+        0, 20, 0,
+        { minX: 600, minY: 160, maxX: 700, maxY: 260 },
+        { x: 0, y: 0 }, { x: 0, y: 0 }
+      );
+
+      const flush = DrawProtocol.flush();
+      const cmd = concat(allocPattern, allocPurple, drawToPattern, blitToScreen, blitToScreen2, flush);
+      draw.processCommands(cmd);
+      log('Blitted pattern to two locations');
+    };
+
+    // Test: Image allocation and management
+    window.testAlloc = function() {
+      log('--- Alloc Test ---');
+
+      // Allocate multiple images with different colors
+      const colors = [
+        0xFF444444,
+        0xFF666666,
+        0xFF888888,
+        0xFFAAAAAA,
+        0xFFCCCCCC,
+      ];
+
+      const cmds = [];
+      for (let i = 0; i < colors.length; i++) {
+        cmds.push(DrawProtocol.alloc(
+          30 + i, 0, 0, Channel.XRGB32, true,
+          { minX: 0, minY: 0, maxX: 1, maxY: 1 },
+          { minX: -0x3FFFFFFF, minY: -0x3FFFFFFF, maxX: 0x3FFFFFFF, maxY: 0x3FFFFFFF },
+          colors[i]
+        ));
+        cmds.push(DrawProtocol.draw(
+          0, 30 + i, 0,
+          { minX: 50 + i * 50, minY: 450, maxX: 90 + i * 50, maxY: 550 },
+          { x: 0, y: 0 }, { x: 0, y: 0 }
+        ));
+      }
+
+      // Free some images
+      cmds.push(DrawProtocol.free(31));
+      cmds.push(DrawProtocol.free(33));
+
+      cmds.push(DrawProtocol.flush());
+
+      const cmd = concat(...cmds);
+      draw.processCommands(cmd);
+      log(`Allocated ${colors.length} images, freed 2`);
+    };
+
+    // Clear canvas
+    window.clearCanvas = function() {
+      log('--- Clear ---');
+      const ctx = canvas.getContext('2d');
+      ctx.fillStyle = '#eaffea';
+      ctx.fillRect(0, 0, canvas.width, canvas.height);
+      log('Canvas cleared');
+    };
+
+    log('Draw test ready. Click buttons to test features.');
+  </script>
+</body>
+</html>
