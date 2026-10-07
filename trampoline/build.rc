@@ -1,0 +1,8 @@
+#!/bin/rc
+ramfs
+cp /mnt/term/home/matt/Git/Enoch/trampoline/enoch.c /tmp
+cd /tmp
+6c -FVw enoch.c
+6l -o enoch enoch.6
+cp enoch /mnt/term/home/matt/Git/Enoch/trampoline/6.enoch
+ls -l /mnt/term/home/matt/Git/Enoch/trampoline/6.enoch

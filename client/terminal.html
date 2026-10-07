@@ -1,0 +1,110 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <title>Enoch Terminal</title>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    html, body { height: 100%; background: #000; }
+    #terminal {
+      width: 100%;
+      height: 100%;
+      background: #000;
+      color: #0f0;
+      font-family: monospace;
+      font-size: 14px;
+      padding: 8px;
+      white-space: pre-wrap;
+      overflow-y: auto;
+    }
+    #status {
+      position: fixed;
+      top: 8px;
+      right: 8px;
+      padding: 4px 8px;
+      background: rgba(0,0,0,0.8);
+      color: #888;
+      font-size: 12px;
+      font-family: monospace;
+    }
+    #status.connected { color: #0f0; }
+    #status.error { color: #f00; }
+  </style>
+</head>
+<body>
+  <div id="status">Connecting...</div>
+  <div id="terminal"></div>
+  <script>
+    const term = document.getElementById('terminal');
+    const status = document.getElementById('status');
+
+    // Get WebSocket URL from query param or default
+    const params = new URLSearchParams(location.search);
+    const wsUrl = params.get('url') || `ws://${location.host}/cpu`;
+
+    let ws;
+    let reconnectTimer;
+
+    function connect() {
+      status.textContent = 'Connecting...';
+      status.className = '';
+
+      ws = new WebSocket(wsUrl);
+      ws.binaryType = 'arraybuffer';
+
+      ws.onopen = () => {
+        status.textContent = 'Connected';
+        status.className = 'connected';
+        term.textContent = '';
+      };
+
+      ws.onmessage = (e) => {
+        const text = new TextDecoder().decode(e.data);
+        term.textContent += text;
+        term.scrollTop = term.scrollHeight;
+      };
+
+      ws.onclose = () => {
+        status.textContent = 'Disconnected';
+        status.className = 'error';
+        reconnectTimer = setTimeout(connect, 2000);
+      };
+
+      ws.onerror = () => {
+        status.textContent = 'Error';
+        status.className = 'error';
+      };
+    }
+
+    // Handle keyboard input
+    document.addEventListener('keydown', (e) => {
+      if (!ws || ws.readyState !== WebSocket.OPEN) return;
+
+      let data;
+      if (e.key === 'Enter') {
+        data = '\n';
+      } else if (e.key === 'Backspace') {
+        data = '\x7f';
+      } else if (e.key === 'Tab') {
+        data = '\t';
+        e.preventDefault();
+      } else if (e.ctrlKey && e.key.length === 1) {
+        // Ctrl+letter -> control character
+        const code = e.key.toUpperCase().charCodeAt(0) - 64;
+        if (code > 0 && code < 32) {
+          data = String.fromCharCode(code);
+          e.preventDefault();
+        }
+      } else if (e.key.length === 1 && !e.ctrlKey && !e.altKey && !e.metaKey) {
+        data = e.key;
+      }
+
+      if (data) {
+        ws.send(new TextEncoder().encode(data));
+      }
+    });
+
+    connect();
+  </script>
+</body>
+</html>

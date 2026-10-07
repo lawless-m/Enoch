@@ -20,8 +20,8 @@ fn main() {
     let username = "glenda";
     let password = "testZ1234";
 
-    // Skip p9sk1, go straight to dp9ik
-    let authdoms: [&str; 0] = [];
+    // Try p9sk1 first
+    let authdoms = ["nawin"];
 
     println!("=== Enoch Auth Server Test ===");
     println!("Connecting to localhost:567...");

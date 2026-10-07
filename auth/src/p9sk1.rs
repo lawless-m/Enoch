@@ -81,13 +81,7 @@ pub fn pass_to_key(password: &str) -> [u8; DESSION] {
 
         n -= 8;
 
-        // Encrypt 8 bytes at current position in place
-        let mut block = [0u8; 8];
-        block.copy_from_slice(&buf[t_offset..t_offset + 8]);
-        des9::plan9_encrypt(&key, &mut block);
-        buf[t_offset..t_offset + 8].copy_from_slice(&block);
-
-        // Advance window
+        // Advance window FIRST (matching 9front's passtokey.c)
         t_offset += 8;
 
         // If remaining < 8, back up to get overlapping window
@@ -95,6 +89,12 @@ pub fn pass_to_key(password: &str) -> [u8; DESSION] {
             t_offset -= 8 - n;
             n = 8;
         }
+
+        // Encrypt 8 bytes at NEW position in place
+        let mut block = [0u8; 8];
+        block.copy_from_slice(&buf[t_offset..t_offset + 8]);
+        des9::plan9_encrypt(&key, &mut block);
+        buf[t_offset..t_offset + 8].copy_from_slice(&block);
     }
 
     key

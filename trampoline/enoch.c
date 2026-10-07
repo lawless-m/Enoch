@@ -39,8 +39,8 @@ struct Route {
 };
 
 Route routes[] = {
-	{ "/cpu",  "tcp!localhost!564" },   /* exportfs */
-	{ "/",     "tcp!localhost!564" },   /* default to exportfs */
+	{ "/cpu",  "tcp!localhost!17010" },   /* cpu -e */
+	{ "/",     "tcp!localhost!17010" },
 	{ nil, nil },
 };
 
@@ -86,26 +86,19 @@ main(int argc, char **argv)
 	if(debug)
 		fprint(2, "listening on %s\n", addr);
 
-	for(;;){
-		lcfd = listen(adir, ldir);
-		if(lcfd < 0)
-			sysfatal("listen: %r");
+	/* Single connection mode for now */
+	lcfd = listen(adir, ldir);
+	if(lcfd < 0)
+		sysfatal("listen: %r");
 
-		switch(rfork(RFPROC|RFMEM|RFNOWAIT)){
-		case -1:
-			sysfatal("fork: %r");
-		case 0:
-			close(acfd);
-			dfd = accept(lcfd, ldir);
-			if(dfd < 0)
-				exits("accept");
-			close(lcfd);
-			handler(dfd);
-			exits(nil);
-		default:
-			close(lcfd);
-		}
-	}
+	dfd = accept(lcfd, ldir);
+	if(dfd < 0)
+		sysfatal("accept: %r");
+	close(lcfd);
+	close(acfd);
+
+	handler(dfd);
+	exits(nil);
 }
 
 char*
@@ -370,6 +363,8 @@ bridge(int wsfd, int p9fd)
 
 			switch(f.opcode){
 			case 0x2:  /* Binary */
+				if(debug)
+					fprint(2, "ws→9p %lld bytes\n", f.len);
 				if(write(p9fd, f.data, f.len) != f.len){
 					free(f.data);
 					goto done;
@@ -392,8 +387,13 @@ bridge(int wsfd, int p9fd)
 		/* Parent: 9p → ws */
 		for(;;){
 			n = read(p9fd, buf, sizeof buf);
-			if(n <= 0)
+			if(n <= 0){
+				if(debug)
+					fprint(2, "9p read: %d (%r)\n", n);
 				break;
+			}
+			if(debug)
+				fprint(2, "9p→ws %d bytes\n", n);
 			if(wswrite(wsfd, 0x2, buf, n) < 0)
 				break;
 		}
